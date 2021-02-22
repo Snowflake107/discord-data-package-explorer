@@ -36,9 +36,12 @@ if (isDemo) {
         payments: {
             total: 500,
             list: 'Super Mega Nitro ($500)'
-        }
+        },
+        appOpened: 0,
+        averageOpenCountPerDay: 0
     };
 }
 
 export const loaded = writable(loadedValue);
+export const loadTask = writable(null);
 export const data = writable(dataValue);

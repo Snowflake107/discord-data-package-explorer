@@ -1,6 +1,6 @@
 <script>
     import jszip from 'jszip';
-    import { loaded, data } from '../app/store';
+    import { loaded, data, loadTask } from '../app/store';
     import { extractData } from '../app/extractor';
 
     let loading = false;
@@ -48,7 +48,7 @@
 
 <div class="loader" on:click="{filePopup}" style="cursor: { loading ? '' : 'pointer' }" on:drop="{handleDrop}" on:dragover="{handleDragOver}">
     {#if loading}
-        Loading your package file...
+        {$loadTask || 'Loading your package file...'}
     {:else if error}
         <p class="loader-error">Something went wrong... Click or drop your package file here to retry</p>
     {:else}

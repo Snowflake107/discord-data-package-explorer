@@ -1,7 +1,11 @@
 import Papa from 'papaparse';
 import axios from 'axios';
 
+import { loaded, loadTask } from './store';
 import { getCreatedTimestamp, mostOccurences } from './helpers';
+
+let currentLoadingMessage;
+loadTask.subscribe((v) => currentLoadingMessage = v);
 
 /**
  * Fetch a user on Discord
@@ -53,14 +57,28 @@ export const extractData = async (zip) => {
         payments: {
             total: 0,
             list: ''
-        }
+        },
+        appOpened: 0,
+        averageOpenCountPerDay: 0
     };
 
     // Read a file from its name
-    const readFile = (name) => zip.files[name].async('text');
+    let previousPercent = null;
+    const readFile = (name, percent, type, onFinish) => zip.files[name].async(type || 'text', percent ? (metadata) => {
+        if (parseInt(metadata.percent) > previousPercent) {
+            if (metadata.percent === 100) {
+                loadTask.set(onFinish);
+            } else {
+                const newMessage = currentLoadingMessage.split( ' (')[0];
+                previousPercent = parseInt(metadata.percent);
+                loadTask.set(`${newMessage} (${previousPercent}%)`);
+            }
+        }
+    } : undefined);
 
     // Parse and load current user informations
     console.log('[debug] Loading user info...');
+    loadTask.set('Loading user info...');
     extractedData.user = JSON.parse(await readFile('account/user.json'));
     const hasPayments = extractedData.user.payments.length > 0;
     if (hasPayments) {
@@ -83,6 +101,7 @@ export const extractData = async (zip) => {
     */
     console.log('[debug] User info loaded.');
 
+    loadTask.set('Loading your messages...');
     // Parse and load channels
     console.log('[debug] Loading channels...');
 
@@ -125,6 +144,7 @@ export const extractData = async (zip) => {
     extractedData.favoriteWord = mostOccurences(words);
 
     console.log('[debug] Fetching top DMs...');
+    loadTask.set('Loading your friends...');
     
     extractedData.topDMs = extractedData.channels
         .filter((channel) => channel.isDM)
@@ -142,12 +162,37 @@ export const extractData = async (zip) => {
 
     console.log(`[debug] ${extractedData.topDMs.length} top DMs loaded.`);
 
+    const dayCount = ((Date.now() - getCreatedTimestamp(extractedData.user.id)) / 24 / 60 / 60 / 1000);
     extractedData.messageCount = extractedData.channels.map((c) => c.messages.length).reduce((p, c) => p + c);
-    extractedData.averageMessageCountPerDay = parseInt(extractedData.messageCount / ((Date.now() - getCreatedTimestamp(extractedData.user.id)) / 24 / 60 / 60 / 1000));
+    extractedData.averageMessageCountPerDay = parseInt(extractedData.messageCount / dayCount);
 
     for (let i = 1; i <= 24; i++) {
         extractedData.hoursValues.push(extractedData.channels.map((c) => c.messages).flat().filter((m) => new Date(m.timestamp).getHours() === i).length);
     }
+
+    console.log('[debug] Loading user activity...');
+    loadTask.set('Loading user activity...');
+
+    const activityFileName = Object.keys(zip.files).find((entry) => /^activity\/analytics\/events/.test(entry));
+    const activityArray = await readFile(activityFileName, true, 'uint8array', 'Calculating statistics...');
+
+    const appOpened = new Uint8Array('app_opened'.split('').map(c => c.charCodeAt()));
+    let j = 0, occurences = 0;
+    for(let i = 0; i < activityArray.length; i++){
+        if(activityArray[i] === appOpened[j])
+            j++
+        else
+            j = 0;
+        if(!appOpened[j]){
+            occurences++;
+            j = 0;
+        }
+    }
+
+    extractedData.appOpened = occurences;
+    extractedData.averageOpenCountPerDay = parseInt(extractedData.appOpened / dayCount);
+
+    loadTask.set('Generating graph...');
 
     return extractedData;
 };
